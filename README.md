@@ -1,0 +1,1 @@
+# G-app-cofigo-assests
