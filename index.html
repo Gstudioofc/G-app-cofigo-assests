@@ -1,761 +1,673 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
+<!-- Playables SDK -->
+<script>// Playables SDK v1.0.0
+// Game lifecycle bridge: rAF-based game-ready detection + event communication
+(function() {
+  'use strict';
+
+  // Idempotency: skip if already initialized (e.g., server-side injection
+  // followed by client-side inject-javascript via the Bloks webview component).
+  if (window.playablesSDK) return;
+
+  var HANDLER_NAME = 'playablesGameEventHandler';
+  var ANDROID_BRIDGE_NAME = '_MetaPlayablesBridge';
+  var RAF_FRAME_THRESHOLD = 3;
+
+  var gameReadySent = false;
+  var firstInteractionSent = false;
+  var errorSent = false;
+  var frameCount = 0;
+  var originalRAF = window.requestAnimationFrame;
+
+  // --- Transport Layer ---
+
+  function hasIOSBridge() {
+    return !!(window.webkit &&
+              window.webkit.messageHandlers &&
+              window.webkit.messageHandlers[HANDLER_NAME]);
+  }
+
+  function hasAndroidBridge() {
+    return !!(window[ANDROID_BRIDGE_NAME] &&
+              typeof window[ANDROID_BRIDGE_NAME].postEvent === 'function');
+  }
+
+  function isInIframe() {
+    return !!(window.parent && window.parent !== window);
+  }
+
+  function sendEvent(eventName, payload) {
+    var message = {
+      type: eventName,
+      payload: payload || {},
+      timestamp: Date.now()
+    };
+
+    if (hasIOSBridge()) {
+      try {
+        window.webkit.messageHandlers[HANDLER_NAME].postMessage(message);
+      } catch (e) { /* ignore */ }
+      return;
+    }
+
+    if (hasAndroidBridge()) {
+    try {
+      var p = payload || {};
+      p.__secureToken = window.__fbAndroidBridgeAuthToken || '';
+      p.timestamp = message.timestamp;
+      window[ANDROID_BRIDGE_NAME].postEvent(
+        eventName,
+        JSON.stringify(p)
+      );
+    } catch (e) { /* ignore */ }
+    return;
+  }
+
+    if (isInIframe()) {
+      try {
+        window.parent.postMessage(message, '*');
+      } catch (e) { /* ignore */ }
+      return;
+    }
+  }
+
+  // --- rAF Game-Ready Detection ---
+
+  function onFrame() {
+    if (gameReadySent) return;
+
+    frameCount++;
+    if (frameCount >= RAF_FRAME_THRESHOLD) {
+      gameReadySent = true;
+      sendEvent('game_ready', {
+        frame_count: frameCount,
+        detected_at: Date.now()
+      });
+      return;
+    }
+
+    originalRAF.call(window, onFrame);
+  }
+
+  if (originalRAF) {
+    window.requestAnimationFrame = function(callback) {
+      if (!gameReadySent) {
+        return originalRAF.call(window, function(timestamp) {
+          frameCount++;
+          if (frameCount >= RAF_FRAME_THRESHOLD && !gameReadySent) {
+            gameReadySent = true;
+            sendEvent('game_ready', {
+              frame_count: frameCount,
+              detected_at: Date.now()
+            });
+          }
+          callback(timestamp);
+        });
+      }
+      return originalRAF.call(window, callback);
+    };
+  }
+
+  // --- First User Interaction Detection ---
+
+  function setupFirstInteractionDetection() {
+    var events = ['touchstart', 'mousedown', 'keydown'];
+
+    function onFirstInteraction() {
+      if (firstInteractionSent) return;
+      firstInteractionSent = true;
+      sendEvent('user_interaction_start', null);
+
+      for (var i = 0; i < events.length; i++) {
+        document.removeEventListener(events[i], onFirstInteraction, true);
+      }
+    }
+
+    for (var i = 0; i < events.length; i++) {
+      document.addEventListener(events[i], onFirstInteraction, true);
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', setupFirstInteractionDetection);
+  } else {
+    setupFirstInteractionDetection();
+  }
+
+  // --- Auto Error Capture ---
+
+  window.addEventListener('error', function(event) {
+    if (errorSent) return;
+    errorSent = true;
+    sendEvent('error', {
+      message: event.message || 'Unknown error',
+      source: event.filename || '',
+      lineno: event.lineno || 0,
+      colno: event.colno || 0,
+      auto_captured: true
+    });
+  });
+
+  window.addEventListener('unhandledrejection', function(event) {
+    if (errorSent) return;
+    errorSent = true;
+    var reason = event.reason;
+    sendEvent('error', {
+      message: (reason instanceof Error) ? reason.message : String(reason),
+      type: 'unhandled_promise_rejection',
+      auto_captured: true
+    });
+  });
+
+  // --- Public API ---
+
+  window.playablesSDK = {
+    complete: function(score) {
+      sendEvent('game_ended', {
+        score: score,
+        completed: true
+      });
+    },
+
+    error: function(message) {
+      if (errorSent) return;
+      errorSent = true;
+      sendEvent('error', {
+        message: message || 'Unknown error',
+        auto_captured: false
+      });
+    },
+
+    sendEvent: function(eventName, payload) {
+      if (!eventName || typeof eventName !== 'string') return;
+      sendEvent(eventName, payload);
+    }
+  };
+
+  // Kick off rAF detection in case no game code calls rAF immediately
+  if (originalRAF) {
+    originalRAF.call(window, onFrame);
+  }
+})();</script>
+<script>window.Intl=window.Intl||{};Intl.t=function(s){return(Intl._locale&&Intl._locale[s])||s;};</script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>G Vault by Gstudioofc</title>
+<title>G Vault by Gstudioofc — Imagem → HTML</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
-:root{
-  --bg:#050308;
-  --bg-2:#0b0614;
-  --card:#14101f;
-  --card-2:#1c142b;
-  --border:#2a2140;
-  --border-2:#3a2d5a;
-  --text:#ede7f7;
-  --muted:#a192c2;
-  --purple:#9333ea;
-  --pink:#ec4899;
-  --grad: linear-gradient(135deg, #9333ea 0%, #ec4899 50%, #f97316 100%);
-  --grad-2: linear-gradient(135deg, rgba(147,51,234,.2), rgba(236,72,153,.2));
-  --shadow: 0 10px 40px rgba(0,0,0,.5), 0 0 0 1px rgba(255,255,255,.03) inset;
-  --radius:16px;
-  --radius-sm:10px;
-}
-*{box-sizing:border-box}
-html,body{height:100%}
-body{
-  margin:0;
-  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Inter, "Helvetica Neue", Arial;
-  background:
-    radial-gradient(1200px 800px at 15% -10%, rgba(147,51,234,.25), transparent 60%),
-    radial-gradient(1000px 700px at 120% 0%, rgba(236,72,153,.18), transparent 50%),
-    radial-gradient(800px 600px at 50% 120%, rgba(124,58,237,.15), transparent 50%),
-    var(--bg);
-  color:var(--text);
-  -webkit-font-smoothing:antialiased;
-  line-height:1.5;
-}
-.app{min-height:100dvh;display:flex;flex-direction:column}
-.header{
-  position:sticky;top:0;z-index:40;
-  backdrop-filter: blur(12px) saturate(1.2);
-  background: linear-gradient(to bottom, rgba(5,3,8,.9), rgba(5,3,8,.6));
-  border-bottom:1px solid var(--border);
-}
-.header-inner{
-  max-width:1400px;margin:0 auto;padding:14px 18px;
-  display:flex;align-items:center;gap:18px;flex-wrap:wrap;
-}
-.brand{display:flex;align-items:center;gap:12px;min-width:220px}
-.logo{
-  width:42px;height:42px;border-radius:12px;
-  background: var(--grad);display:grid;place-items:center;
-  box-shadow: 0 8px 24px rgba(147,51,234,.35), 0 0 0 1px rgba(255,255,255,.1) inset;
-  position:relative;overflow:hidden;
-}
-.logo svg{width:26px;height:26px;filter:drop-shadow(0 2px 4px rgba(0,0,0,.3))}
-.logo::after{
-  content:"";position:absolute;inset:-50%;background:conic-gradient(from 0deg, transparent, rgba(255,255,255,.3), transparent 30%);
-  animation:spin 4s linear infinite;
-}
-@keyframes spin{to{transform:rotate(360deg)}}
-.brand h1{margin:0;font-size:20px;letter-spacing:.5px;font-weight:800}
-.brand p{margin:-2px 0 0;font-size:12px;color:var(--muted)}
-.tabs{margin-left:auto;display:flex;gap:8px;background:rgba(255,255,255,.04);padding:6px;border-radius:999px;border:1px solid var(--border)}
-.tab{
-  appearance:none;border:0;background:transparent;color:var(--muted);
-  padding:8px 16px;border-radius:999px;font-weight:600;font-size:14px;cursor:pointer;
-  transition:.2s;
-}
-.tab.active{color:#fff;background:var(--card-2);box-shadow:0 0 0 1px var(--border-2) inset, 0 4px 12px rgba(0,0,0,.3)}
-.tab:hover:not(.active){color:var(--text);background:rgba(255,255,255,.05)}
-
-main{flex:1;max-width:1400px;width:100%;margin:0 auto;padding:22px 18px 40px}
-.view{display:none}
-.view.active{display:block;animation:fade .3s ease}
-@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
-
-.vault{
-  display:grid;grid-template-columns:260px 1fr;gap:18px;align-items:start;
-}
-.sidebar{
-  position:sticky;top:84px;
-  background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02));
-  border:1px solid var(--border);border-radius:var(--radius);padding:14px;
-  box-shadow:var(--shadow);
-}
-.sidebar-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
-.sidebar-head h3{margin:0;font-size:13px;text-transform:uppercase;letter-spacing:.12em;color:var(--muted)}
-#btn-add-cat{
-  width:28px;height:28px;border-radius:8px;border:1px solid var(--border-2);
-  background:var(--grad-2);color:#fff;font-size:18px;line-height:1;cursor:pointer;transition:.2s;
-}
-#btn-add-cat:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(147,51,234,.25)}
-.categories{display:flex;flex-direction:column;gap:6px;max-height:60vh;overflow:auto;padding-right:4px}
-.cat{
-  text-align:left;width:100%;padding:10px 12px;border-radius:10px;
-  border:1px solid transparent;background:transparent;color:var(--muted);
-  cursor:pointer;font-weight:500;display:flex;align-items:center;gap:8px;transition:.2s;
-}
-.cat:hover{background:rgba(255,255,255,.04);color:var(--text)}
-.cat.active{background:var(--grad-2);color:#fff;border-color:var(--border-2);box-shadow:0 2px 10px rgba(147,51,234,.2) inset}
-.cat .dot{width:8px;height:8px;border-radius:50%;background:currentColor;opacity:.6}
-
-.workspace{
-  background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.015));
-  border:1px solid var(--border);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow);
-}
-.toolbar{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
-.search{
-  flex:1;min-width:220px;display:flex;align-items:center;gap:8px;
-  background:var(--bg-2);border:1px solid var(--border);border-radius:12px;padding:8px 12px;
-}
-.search svg{opacity:.6}
-.search input{
-  flex:1;background:transparent;border:0;outline:0;color:var(--text);font-size:14px
-}
-.toolbar-actions{display:flex;gap:8px;flex-wrap:wrap}
-.btn{
-  appearance:none;border:1px solid var(--border);background:rgba(255,255,255,.04);
-  color:var(--text);padding:9px 14px;border-radius:10px;font-weight:600;font-size:14px;
-  cursor:pointer;transition:.2s;display:inline-flex;align-items:center;gap:8px;
-}
-.btn:hover{transform:translateY(-1px);background:rgba(255,255,255,.08);border-color:var(--border-2)}
-.btn:active{transform:translateY(0)}
-.btn.primary{
-  background:var(--grad);border:0;box-shadow:0 8px 20px rgba(147,51,234,.3), 0 2px 0 rgba(255,255,255,.1) inset;
-}
-.btn.primary:hover{filter:brightness(1.1);box-shadow:0 10px 26px rgba(236,72,153,.35)}
-.btn.ghost{background:transparent}
-.btn.danger{color:#fda4af;border-color:rgba(244,63,94,.3)}
-.btn.danger:hover{background:rgba(244,63,94,.12)}
-
-.snippets{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px}
-.snippet-card{
-  background: linear-gradient(180deg, var(--card), var(--card-2));
-  border:1px solid var(--border);border-radius:14px;padding:14px;
-  display:flex;flex-direction:column;gap:10px;transition:.2s;
-  box-shadow:0 4px 16px rgba(0,0,0,.25);
-}
-.snippet-card:hover{transform:translateY(-2px);border-color:var(--border-2);box-shadow:0 10px 30px rgba(0,0,0,.35), 0 0 0 1px rgba(147,51,234,.2) inset}
-.snippet-top{display:flex;justify-content:space-between;gap:10px}
-.snippet-top h3{margin:0;font-size:16px;font-weight:700}
-.meta{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);margin-top:4px}
-.tag{padding:2px 8px;border-radius:999px;background:rgba(255,255,255,.06);border:1px solid var(--border);font-size:11px}
-.dot{opacity:.5}
-.lang{
-  padding:4px 8px;border-radius:8px;font-size:11px;font-weight:700;letter-spacing:.05em;
-  border:1px solid;
-}
-.lang-HTML,.lang-html{background:rgba(236,72,153,.15);color:#fbcfe8;border-color:rgba(236,72,153,.3)}
-.lang-CSS,.lang-css{background:rgba(59,130,246,.15);color:#bfdbfe;border-color:rgba(59,130,246,.3)}
-.lang-JS,.lang-js{background:rgba(234,179,8,.15);color:#fef08a;border-color:rgba(234,179,8,.3)}
-.lang-JSON,.lang-json{background:rgba(147,51,234,.15);color:#e9d5ff;border-color:rgba(147,51,234,.3)}
-.snippet-card pre{
-  margin:0;background:#08050f;border:1px solid var(--border);border-radius:10px;
-  padding:10px;overflow:auto;max-height:140px
-}
-.snippet-card code{font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;font-size:12px;color:#d6c7f0;white-space:pre}
-.snippet-actions{display:flex;gap:6px;flex-wrap:wrap}
-.snippet-actions button{
-  padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:rgba(255,255,255,.03);
-  color:var(--muted);font-size:12px;font-weight:600;cursor:pointer;transition:.2s
-}
-.snippet-actions button:hover{color:var(--text);background:rgba(255,255,255,.08)}
-
-.empty{
-  text-align:center;padding:60px 20px;color:var(--muted);
-  border:1px dashed var(--border);border-radius:14px;background:rgba(255,255,255,.02)
-}
-.empty h3{margin:0 0 6px;color:var(--text)}
-
-.image-tool{display:grid;grid-template-columns:1.1fr .9fr;gap:18px;align-items:start}
-.uploader,.generator{
-  background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.015));
-  border:1px solid var(--border);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow)
-}
-.dropzone{
-  border:2px dashed var(--border-2);border-radius:14px;padding:28px;text-align:center;
-  background: repeating-linear-gradient(45deg, rgba(147,51,234,.05) 0 10px, transparent 10px 20px);
-  transition:.2s;cursor:pointer;
-}
-.dropzone.drag{border-color:#ec4899;background:rgba(236,72,153,.08);transform:scale(1.01)}
-.dropzone .icon{width:48px;height:48px;margin:0 auto 10px;opacity:.9}
-.dropzone h3{margin:0 0 6px}
-.dropzone p{margin:0;color:var(--muted);font-size:14px}
-.dropzone .choose{margin-top:12px}
-.preview-wrap{margin-top:14px;display:none}
-.preview-wrap.show{display:block}
-.preview-img{
-  width:100%;max-height:360px;object-fit:contain;background:#07030c;
-  border:1px solid var(--border);border-radius:12px;padding:8px
-}
-.image-info{
-  margin-top:10px;display:flex;gap:10px;flex-wrap:wrap;font-size:12px;color:var(--muted)
-}
-.info-pill{padding:4px 8px;border-radius:999px;background:rgba(255,255,255,.05);border:1px solid var(--border)}
-.warning{
-  display:none;margin-top:10px;padding:10px 12px;border-radius:10px;
-  background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);color:#fcd34d;font-size:13px
-}
-.warning.show{display:block}
-
-.generator h3{margin:0 0 12px;font-size:16px}
-.modes{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
-.mode{
-  position:relative;border:1px solid var(--border);border-radius:12px;padding:10px 12px;
-  background:rgba(255,255,255,.03);cursor:pointer;transition:.2s
-}
-.mode:hover{border-color:var(--border-2);background:rgba(255,255,255,.05)}
-.mode input{position:absolute;inset:0;opacity:0;cursor:pointer}
-.mode .title{font-weight:700;font-size:13px}
-.mode .desc{font-size:12px;color:var(--muted);margin-top:2px}
-.mode:has(input:checked){border-color:#9333ea;box-shadow:0 0 0 1px rgba(147,51,234,.5) inset, 0 0 20px rgba(147,51,234,.15);background:var(--grad-2)}
-
-.code-block{margin-top:12px}
-.code-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
-.code-head span{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
-.code-block textarea{
-  width:100%;min-height:140px;resize:vertical;background:#07030c;color:#e2d9f3;
-  border:1px solid var(--border);border-radius:12px;padding:10px;
-  font-family: ui-monospace, monospace;font-size:12px;line-height:1.5
-}
-.live-preview{
-  margin-top:12px;border:1px solid var(--border);border-radius:12px;padding:12px;
-  background:
-    linear-gradient(45deg, #0a0612 25%, transparent 25%) 0 0/16px 16px,
-    linear-gradient(-45deg, #0a0612 25%, transparent 25%) 0 0/16px 16px,
-    linear-gradient(45deg, transparent 75%, #0a0612 75%) 8px 8px/16px 16px,
-    linear-gradient(-45deg, transparent 75%, #0a0612 75%) 8px 8px/16px 16px,
-    #050308;
-  min-height:120px;display:grid;place-items:center;overflow:auto
-}
-.live-preview img{max-width:100%;height:auto;display:block}
-
-footer{
-  margin-top:auto;padding:24px;text-align:center;color:var(--muted);font-size:12px;
-  border-top:1px solid var(--border);background:rgba(0,0,0,.2)
-}
-
-/* Modal */
-.modal{position:fixed;inset:0;display:none;place-items:center;z-index:100;padding:18px}
-.modal.open{display:grid}
-.modal-backdrop{position:absolute;inset:0;background:rgba(3,1,7,.7);backdrop-filter:blur(6px)}
-.modal-card{
-  position:relative;width:100%;max-width:760px;max-height:90vh;overflow:auto;
-  background:linear-gradient(180deg, #140e22, #0e0a16);border:1px solid var(--border-2);
-  border-radius:18px;padding:18px;box-shadow:0 20px 60px rgba(0,0,0,.6)
-}
-.modal-card h2{margin:0 0 12px}
-#snippet-form label{display:block;font-size:13px;color:var(--muted);margin-bottom:10px}
-#snippet-form input,#snippet-form select,#snippet-form textarea{
-  width:100%;margin-top:6px;background:#080511;color:var(--text);
-  border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:14px;outline:0
-}
-#snippet-form textarea{font-family:ui-monospace,monospace;min-height:260px;tab-size:2}
-#snippet-form .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}
-
-/* Toast */
-.toast{
-  position:fixed;top:18px;right:18px;z-index:200;
-  background:#110a1c;border:1px solid var(--border-2);color:var(--text);
-  padding:10px 14px;border-radius:12px;box-shadow:var(--shadow);
-  transform:translateY(-20px);opacity:0;pointer-events:none;transition:.3s
-}
-.toast.show{transform:none;opacity:1}
-
-/* Scrollbars */
-*{scrollbar-width:thin;scrollbar-color:#5b448a transparent}
-::-webkit-scrollbar{width:8px;height:8px}
-::-webkit-scrollbar-thumb{background:#3a2a5e;border-radius:8px}
-::-webkit-scrollbar-thumb:hover{background:#5b448a}
-
-/* Responsive */
-@media (max-width:1024px){
-  .vault{grid-template-columns:1fr}
-  .sidebar{position:static}
-  .categories{flex-direction:row;overflow:auto;padding-bottom:4px}
-  .cat{white-space:nowrap}
-  .image-tool{grid-template-columns:1fr}
-}
-@media (max-width:640px){
-  .header-inner{padding:12px}
-  .brand h1{font-size:18px}
-  .tabs{width:100%;order:3}
-  .snippets{grid-template-columns:1fr}
-  .modes{grid-template-columns:1fr}
-  #snippet-form .row{grid-template-columns:1fr}
-}
+  :root { color-scheme: dark; }
+  body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background: #050507; }
+  .mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+  .glass { backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+  .tab-btn { @apply px-4 py-2 rounded-xl text-sm font-medium transition; }
+  .tab-btn.active { background: #1a1a23; color: white; box-shadow: inset 0 0 0 1px #2a2a36; }
+  .tab-btn:not(.active) { color: #9ca3af; }
+  .tab-btn:not(.active):hover { color: #e5e7eb; background: #0f0f14; }
+  textarea.code { white-space: pre; overflow-wrap: normal; overflow-x: auto; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-thumb { background: #2a2a36; border-radius: 4px; }
 </style>
 </head>
-<body>
-<div class="app">
-  <header class="header">
-    <div class="header-inner">
-      <div class="brand">
-        <div class="logo" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none">
-            <defs>
-              <linearGradient id="g" x1="0" y1="0" x2="24" y2="24">
-                <stop stop-color="#fff" stop-opacity=".95"/>
-                <stop offset="1" stop-color="#fff" stop-opacity=".7"/>
-              </linearGradient>
-            </defs>
-            <path d="M12 3c4.5 0 8 3.2 8 7.3 0 3-1.8 5.5-4.6 6.7l-.2.1v2.2l-2.8-1.5c-.5.1-1 .1-1.4.1-4.5 0-8-3.2-8-7.3S7.5 3 12 3Z" fill="url(#g)" opacity=".18"/>
-            <path d="M7.2 9.8c0-2.7 2.4-4.9 5.3-4.9 1.7 0 3.2.7 4.2 1.8l-1.5 1.3a2.8 2.8 0 0 0-2.7-1.1c-1.8 0-3.2 1.2-3.2 2.7 0 1.6 1.4 2.8 3.2 2.8.6 0 1.2-.1 1.7-.4v-1.1H10.9V9.1h5.2v3.8c-1 .7-2.3 1.2-3.6 1.2-2.9 0-5.3-2.1-5.3-4.9Z" fill="url(#g)"/>
-          </svg>
-        </div>
-        <div>
-          <h1>G Vault</h1>
-          <p>guarda tudo, não perde nada</p>
+<body class="text-zinc-100 min-h-screen">
+<div class="max-w-5xl mx-auto px-4 py-6 md:py-10">
+
+  <!-- Header -->
+  <header class="flex items-center justify-between mb-8">
+    <div class="flex items-center gap-3">
+      <div class="w-11 h-11 rounded-2xl bg-gradient-to-br from-violet-600 via-fuchsia-500 to-cyan-400 p-[1px] shadow-lg shadow-violet-900/20">
+        <div class="w-full h-full rounded-2xl bg-black flex items-center justify-center">
+          <span class="text-[22px] font-bold bg-gradient-to-br from-white to-zinc-400 bg-clip-text text-transparent">G</span>
         </div>
       </div>
-      <nav class="tabs" role="tablist" aria-label="Navegação principal">
-        <button class="tab active" data-tab="codigos" role="tab" aria-selected="true">Meus Códigos</button>
-        <button class="tab" data-tab="imagem" role="tab" aria-selected="false">Imagem → HTML</button>
-      </nav>
+      <div>
+        <h1 class="text-[22px] leading-tight font-semibold tracking-tight">G Vault <span class="text-zinc-500 font-medium">by Gstudioofc</span></h1>
+        <p class="text-xs text-zinc-500 -mt-0.5">Ferramentas PRO para Blogger</p>
+      </div>
+    </div>
+    <div class="hidden md:flex items-center gap-2 text-[11px] text-zinc-500">
+      <span class="px-2 py-1 rounded-lg bg-zinc-900 border border-zinc-800">v2.1</span>
+      <span class="px-2 py-1 rounded-lg bg-zinc-900 border border-zinc-800">offline</span>
     </div>
   </header>
 
-  <main>
-    <!-- TAB 1 -->
-    <section id="view-codigos" class="view active" role="tabpanel">
-      <div class="vault">
-        <aside class="sidebar">
-          <div class="sidebar-head">
-            <h3>Categorias</h3>
-            <button id="btn-add-cat" title="Nova categoria" aria-label="Adicionar categoria">+</button>
-          </div>
-          <div id="categories" class="categories"></div>
-        </aside>
-
-        <div class="workspace">
-          <div class="toolbar">
-            <div class="search">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-              <input id="search" type="search" placeholder="Buscar por título ou código…" autocomplete="off">
-            </div>
-            <div class="toolbar-actions">
-              <button id="btn-new" class="btn primary">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
-                Novo
-              </button>
-              <button id="btn-export" class="btn ghost" title="Exportar JSON">Exportar</button>
-              <button id="btn-import" class="btn ghost" title="Importar JSON">Importar</button>
-              <input id="import-file" type="file" accept=".json,application/json" hidden>
-            </div>
-          </div>
-
-          <div id="snippets" class="snippets"></div>
-          <div id="empty" class="empty" hidden>
-            <h3>Seu cofre está vazio</h3>
-            <p>Clique em "Novo" para guardar seu primeiro snippet. Tudo fica salvo no seu navegador.</p>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- TAB 2 -->
-    <section id="view-imagem" class="view" role="tabpanel">
-      <div class="image-tool">
-        <div class="uploader">
-          <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-label="Enviar imagem">
-            <div class="icon">
-              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="url(#grad1)" stroke-width="1.5">
-                <defs><linearGradient id="grad1" x1="0" y1="0" x2="24" y2="24"><stop stop-color="#a855f7"/><stop offset="1" stop-color="#ec4899"/></linearGradient></defs>
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
-              </svg>
-            </div>
-            <h3>Arraste sua imagem aqui</h3>
-            <p>PNG, JPG, GIF, SVG ou WebP — convertemos para Base64</p>
-            <button class="btn primary choose" type="button" id="btn-choose">Escolher arquivo</button>
-            <input id="file-input" type="file" accept="image/*" hidden>
-          </div>
-
-          <div id="preview-wrap" class="preview-wrap">
-            <img id="preview-img" class="preview-img" alt="Prévia da imagem">
-            <div id="image-info" class="image-info"></div>
-            <div id="size-warning" class="warning">⚠️ Imagem acima de 500KB — Blogger pode recusar. Tente comprimir.</div>
-          </div>
-        </div>
-
-        <div class="generator">
-          <h3>Gerar código</h3>
-          <div class="modes">
-            <label class="mode">
-              <input type="radio" name="mode" value="img" checked>
-              <div class="title">&lt;img src&gt; simples</div>
-              <div class="desc">Responsivo, melhor para posts</div>
-            </label>
-            <label class="mode">
-              <input type="radio" name="mode" value="div">
-              <div class="title">&lt;div background&gt;</div>
-              <div class="desc">Como background cover</div>
-            </label>
-            <label class="mode">
-              <input type="radio" name="mode" value="blogger">
-              <div class="title">Blogger responsivo</div>
-              <div class="desc">Com data-original-* e separator</div>
-            </label>
-            <label class="mode">
-              <input type="radio" name="mode" value="base64">
-              <div class="title">Base64 completo</div>
-              <div class="desc">Apenas o data:image/...</div>
-            </label>
-          </div>
-
-          <div class="code-block">
-            <div class="code-head">
-              <span>Código gerado</span>
-              <button id="btn-copy-code" class="btn ghost" type="button">Copiar</button>
-            </div>
-            <textarea id="code-output" spellcheck="false" placeholder="Envie uma imagem para gerar o HTML..."></textarea>
-          </div>
-
-          <div>
-            <div class="code-head" style="margin-top:14px"><span>Prévia ao vivo</span></div>
-            <div id="live-preview" class="live-preview"><span style="color:var(--muted)">Sem imagem</span></div>
-          </div>
-
-          <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
-            <button id="btn-save-vault" class="btn primary" type="button" disabled>Salvar no Vault</button>
-            <button id="btn-clear-img" class="btn ghost" type="button">Limpar</button>
-          </div>
-        </div>
-      </div>
-    </section>
-  </main>
-
-  <footer>© Gstudioofc — G Vault</footer>
-</div>
-
-<!-- MODAL -->
-<div id="modal" class="modal" aria-hidden="true">
-  <div class="modal-backdrop" id="modal-backdrop"></div>
-  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modal-title">
-    <h2 id="modal-title">Novo snippet</h2>
-    <form id="snippet-form">
-      <label>
-        Título
-        <input id="f-title" required maxlength="120" placeholder="Ex: Botão gradiente neon">
-      </label>
-      <div class="row">
-        <label>
-          Categoria
-          <select id="f-category" required></select>
-        </label>
-        <label>
-          Linguagem
-          <select id="f-lang" required>
-            <option value="html">HTML</option>
-            <option value="css">CSS</option>
-            <option value="js">JavaScript</option>
-            <option value="json">JSON</option>
-          </select>
-        </label>
-      </div>
-      <label>
-        Código
-        <textarea id="f-code" required placeholder="Cole seu código aqui..."></textarea>
-      </label>
-      <div class="modal-actions">
-        <button type="button" class="btn ghost" id="btn-cancel">Cancelar</button>
-        <button type="submit" class="btn primary">Salvar</button>
-      </div>
-    </form>
+  <!-- Tabs -->
+  <div class="flex items-center gap-2 p-1 bg-[#0b0b10] rounded-2xl border border-zinc-800 w-fit mb-6">
+    <button data-tab="vault" class="tab-btn active" id="btn-vault">
+      <span class="flex items-center gap-1.5">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        Vault
+      </span>
+    </button>
+    <button data-tab="imagem" class="tab-btn" id="btn-imagem">
+      <span class="flex items-center gap-1.5">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+        Imagem → HTML
+      </span>
+    </button>
   </div>
+
+  <!-- TAB 1: VAULT (mantido) -->
+  <section id="tab-vault" class="space-y-5">
+    <div class="grid md:grid-cols-5 gap-5">
+      <div class="md:col-span-3">
+        <div class="rounded-2xl bg-[#0b0b10] border border-zinc-800 p-4">
+          <label class="text-xs text-zinc-400 mb-2 block">Novo item</label>
+          <textarea id="vaultInput" rows="5" placeholder="Cole seu código HTML, CSS, ou notas..." class="w-full resize-y rounded-xl bg-black/60 border border-zinc-800 p-3 text-sm outline-none focus:border-violet-500/50 focus:ring-2 focus:ring-violet-500/20"></textarea>
+          <div class="flex items-center justify-between mt-3">
+            <span class="text-[11px] text-zinc-500">Salvo localmente no navegador</span>
+            <button id="saveVaultBtn" class="px-3 py-1.5 rounded-lg bg-white text-black text-sm font-medium hover:opacity-90 active:opacity-80">Salvar no Vault</button>
+          </div>
+        </div>
+      </div>
+      <div class="md:col-span-2">
+        <div class="rounded-2xl bg-[#0b0b10] border border-zinc-800 p-4 h-full">
+          <h3 class="text-sm font-medium mb-2">Dicas</h3>
+          <ul class="text-xs text-zinc-400 space-y-1.5 leading-relaxed">
+            <li>• Use o Vault para guardar códigos que usa sempre.</li>
+            <li>• Tudo fica no seu navegador (localStorage).</li>
+            <li>• Na aba Imagem → HTML você pode enviar direto para cá.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="text-sm font-semibold text-zinc-300">Itens salvos</h3>
+        <button id="clearVault" class="text-[11px] text-zinc-500 hover:text-red-400">Limpar tudo</button>
+      </div>
+      <div id="vaultList" class="grid sm:grid-cols-2 gap-3"></div>
+      <p id="vaultEmpty" class="text-sm text-zinc-600 text-center py-10 hidden">Nenhum item ainda. Salve seu primeiro código.</p>
+    </div>
+  </section>
+
+  <!-- TAB 2: IMAGEM → HTML -->
+  <section id="tab-imagem" class="hidden">
+    <div class="grid lg:grid-cols-5 gap-5">
+      <!-- Left -->
+      <div class="lg:col-span-2 space-y-4">
+        <div class="rounded-2xl bg-[#0b0b10] border border-zinc-800 p-4">
+          <div id="dropzone" class="group relative border border-dashed border-zinc-700 rounded-xl p-6 text-center hover:border-violet-500/50 transition cursor-pointer bg-black/40">
+            <input type="file" id="imgInput" accept="image/*" class="hidden">
+            <div id="dropContent">
+              <div class="w-12 h-12 mx-auto rounded-xl bg-zinc-900 flex items-center justify-center mb-3 group-hover:scale-105 transition">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="text-zinc-400"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              </div>
+              <p class="text-sm font-medium">Solte a imagem aqui</p>
+              <p class="text-xs text-zinc-500 mt-1">ou clique para escolher • PNG, JPG, WEBP</p>
+            </div>
+            <div id="previewWrap" class="hidden">
+              <img id="previewImg" class="max-h-48 mx-auto rounded-lg" alt="preview">
+              <p class="text-[11px] text-zinc-500 mt-2" id="imgDims"></p>
+            </div>
+          </div>
+
+          <div class="mt-4 flex items-center justify-between">
+            <label class="flex items-center gap-2 cursor-pointer select-none">
+              <input type="checkbox" id="chkCompress" checked class="sr-only peer">
+              <div class="w-9 h-5 rounded-full bg-zinc-800 peer-checked:bg-violet-600 relative transition">
+                <div class="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition peer-checked:translate-x-4"></div>
+              </div>
+              <span class="text-sm">Compactar (recomendado)</span>
+            </label>
+            <button id="changeImg" class="text-xs text-zinc-400 hover:text-white hidden">Trocar imagem</button>
+          </div>
+
+          <div id="sizeInfo" class="mt-3 hidden">
+            <div class="flex items-center gap-3 text-[12px] px-3 py-2 rounded-lg bg-black/60 border border-zinc-800">
+              <span class="text-zinc-500">Original:</span>
+              <b id="origSize" class="text-zinc-200">-</b>
+              <span class="text-zinc-600">→</span>
+              <span class="text-zinc-500">Comprimido:</span>
+              <b id="compSize" class="text-emerald-400">-</b>
+              <span id="saving" class="ml-auto text-[11px] text-emerald-400/80"></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="rounded-2xl bg-amber-500/5 border border-amber-500/20 p-3">
+          <p class="text-[12px] leading-relaxed text-amber-200/90">
+            <b class="text-amber-100">Atenção:</b> Base64 fica grande. Para Blogger, use imagens até <b>300KB</b>. Já comprimo automaticamente para <b>800px</b> e qualidade <b>0.75</b>.
+          </p>
+        </div>
+      </div>
+
+      <!-- Right -->
+      <div class="lg:col-span-3 space-y-4">
+        <div class="rounded-2xl bg-[#0b0b10] border border-zinc-800 p-4">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="text-sm font-medium">Modo de saída</h3>
+            <span class="text-[10px] px-2 py-0.5 rounded-md bg-zinc-900 border border-zinc-800 text-zinc-500">máx. 3 linhas</span>
+          </div>
+          
+          <div class="grid sm:grid-cols-3 gap-2">
+            <label class="mode-card relative cursor-pointer">
+              <input type="radio" name="mode" value="blogger" checked class="sr-only peer">
+              <div class="h-full rounded-xl border border-zinc-800 bg-black/40 p-3 peer-checked:border-violet-500/50 peer-checked:bg-violet-500/5 hover:border-zinc-700 transition">
+                <p class="text-sm font-medium">Blogger Curto</p>
+                <p class="text-[11px] text-zinc-500 mt-0.5">recomendado</p>
+              </div>
+            </label>
+            <label class="mode-card relative cursor-pointer">
+              <input type="radio" name="mode" value="simple" class="sr-only peer">
+              <div class="h-full rounded-xl border border-zinc-800 bg-black/40 p-3 peer-checked:border-violet-500/50 peer-checked:bg-violet-500/5 hover:border-zinc-700 transition">
+                <p class="text-sm font-medium">&lt;img simples&gt;</p>
+                <p class="text-[11px] text-zinc-500 mt-0.5">responsivo</p>
+              </div>
+            </label>
+            <label class="mode-card relative cursor-pointer">
+              <input type="radio" name="mode" value="externa" class="sr-only peer">
+              <div class="h-full rounded-xl border border-zinc-800 bg-black/40 p-3 peer-checked:border-violet-500/50 peer-checked:bg-violet-500/5 hover:border-zinc-700 transition">
+                <p class="text-sm font-medium">URL externa</p>
+                <p class="text-[11px] text-zinc-500 mt-0.5">mais leve</p>
+              </div>
+            </label>
+          </div>
+
+          <div id="externaHelp" class="hidden mt-3 p-3 rounded-xl bg-cyan-500/5 border border-cyan-500/20">
+            <p class="text-[12px] text-cyan-200/90 leading-relaxed">
+              1) Envie em <a href="https://postimages.org/" target="_blank" class="underline decoration-cyan-400/30 hover:decoration-cyan-400">postimages.org</a> → 2) Copie o <b>Direct link</b> → 3) Substitua <span class="mono bg-black/50 px-1 rounded">COLE_SUA_URL_AQUI</span> no código abaixo.
+            </p>
+          </div>
+        </div>
+
+        <div class="rounded-2xl bg-[#0b0b10] border border-zinc-800 p-4">
+          <div class="flex items-center justify-between mb-2">
+            <label class="text-xs text-zinc-400">Código gerado</label>
+            <div class="flex items-center gap-2">
+              <span class="text-[10px] px-1.5 py-0.5 rounded bg-zinc-900 border border-zinc-800 text-zinc-500"><span id="lineCount">1</span> linha</span>
+              <span class="text-[10px] px-1.5 py-0.5 rounded bg-zinc-900 border border-zinc-800 text-zinc-500 mono" id="charCount">0 chars</span>
+            </div>
+          <div class="relative">
+            <textarea id="output" wrap="off" rows="3" readonly class="code w-full h-[84px] resize-none rounded-xl bg-black/70 border border-zinc-800 p-3 pr-10 text-[12px] leading-5 outline-none focus:border-violet-500/50"></textarea>
+            <button id="copyBtn" class="absolute right-2 top-2 p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 active:scale-95 transition" title="Copiar">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            </button>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-2 mt-3">
+            <button id="copyOneBtn" class="px-3 py-2 rounded-xl bg-white text-black text-sm font-medium hover:opacity-90 active:opacity-80 flex items-center gap-1.5">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>
+              Copiar código (1 clique)
+            </button>
+            <button id="saveToVaultBtn" class="px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-800 text-sm hover:bg-zinc-800">Salvar no Vault</button>
+            <span id="copyToast" class="text-xs text-emerald-400 opacity-0 transition">Copiado!</span>
+          </div>
+
+          <p id="sizeWarning" class="hidden mt-3 text-[12px] px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/20 text-red-300"></p>
+        </div>
+      </div>
+    </div>
+  </section>
+
 </div>
 
-<div id="toast" class="toast" role="status" aria-live="polite"></div>
+<!-- Toast -->
+<div id="toast" class="fixed bottom-5 left-1/2 -translate-x-1/2 px-4 py-2 rounded-xl bg-zinc-900 border border-zinc-700 text-sm shadow-2xl opacity-0 pointer-events-none transition">Pronto</div>
 
 <script>
-(() => {
-  const $ = s => document.querySelector(s);
-  const $$ = s => document.querySelectorAll(s);
-  const storeSnippets = 'g_vault_snippets';
-  const storeCats = 'g_vault_categories';
+const $ = s => document.querySelector(s);
+const $$ = s => document.querySelectorAll(s);
 
-  let snippets = [];
-  let categories = [];
-  let activeCat = 'all';
-  let searchTerm = '';
-  let editingId = null;
-  let currentImage = null;
+// Tabs
+$$('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    $$('.tab-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    $('#tab-vault').classList.toggle('hidden', btn.dataset.tab !== 'vault');
+    $('#tab-imagem').classList.toggle('hidden', btn.dataset.tab !== 'imagem');
+  });
+});
 
-  // Utils
-  const esc = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  const fmtDate = ts => new Date(ts).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'});
-  const fmtSize = b => b<1024?`${b} B`:b<1024*1024?`${(b/1024).toFixed(1)} KB`:`${(b/1024/1024).toFixed(2)} MB`;
-  const uid = () => Math.random().toString(36).slice(2)+Date.now().toString(36);
-  const toast = (msg) => { const t=$('#toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2200); };
-
-  async function copyText(text){
-    try{ await navigator.clipboard.writeText(text); toast('Copiado!'); }
-    catch{ const ta=document.createElement('textarea'); ta.value=text; ta.style.position='fixed'; ta.style.opacity='0'; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); toast('Copiado!'); }
-  }
-
-  // Init
-  function load(){
-    try{ categories = JSON.parse(localStorage.getItem(storeCats)||''); }catch{}
-    if(!Array.isArray(categories)||categories.length===0){ categories = ['HTML','CSS','JS','Assets','Outros']; saveCats(); }
-    try{ snippets = JSON.parse(localStorage.getItem(storeSnippets)||''); }catch{}
-    if(!Array.isArray(snippets)) snippets=[];
-    if(snippets.length===0){
-      snippets.push({
-        id:'welcome',
-        title:'Bem-vindo ao G Vault',
-        category:'Outros',
-        language:'html',
-        code:'<!-- G Vault by Gstudioofc -->\n<div style="padding:16px;border-radius:12px;background:linear-gradient(135deg,#9333ea,#ec4899);color:white;font-weight:700">guarda tudo, não perde nada</div>',
-        date: Date.now()
-      });
-      saveSnips();
-    }
-  }
-  const saveSnips = () => localStorage.setItem(storeSnippets, JSON.stringify(snippets));
-  const saveCats = () => localStorage.setItem(storeCats, JSON.stringify(categories));
-
-  // Render categories
-  function renderCats(){
-    const wrap = $('#categories');
-    wrap.innerHTML = '';
-    const all = document.createElement('button');
-    all.className = 'cat' + (activeCat==='all'?' active':'');
-    all.innerHTML = `<span class="dot"></span> Todos <span style="margin-left:auto;opacity:.6">${snippets.length}</span>`;
-    all.onclick = () => { activeCat='all'; renderCats(); renderSnips(); };
-    wrap.appendChild(all);
-    categories.forEach(cat=>{
-      const count = snippets.filter(s=>s.category===cat).length;
-      const b = document.createElement('button');
-      b.className = 'cat' + (activeCat===cat?' active':'');
-      b.innerHTML = `<span class="dot"></span> ${esc(cat)} <span style="margin-left:auto;opacity:.6">${count}</span>`;
-      b.onclick = () => { activeCat=cat; renderCats(); renderSnips(); };
-      wrap.appendChild(b);
-    });
-    // populate modal select
-    const sel = $('#f-category');
-    sel.innerHTML = categories.map(c=>`<option>${esc(c)}</option>`).join('');
-  }
-
-  // Render snippets
-  function renderSnips(){
-    const list = $('#snippets');
-    const empty = $('#empty');
-    const q = searchTerm.trim().toLowerCase();
-    let filtered = snippets.slice().sort((a,b)=>b.date-a.date);
-    if(activeCat!=='all') filtered = filtered.filter(s=>s.category===activeCat);
-    if(q) filtered = filtered.filter(s=> (s.title.toLowerCase().includes(q) || s.code.toLowerCase().includes(q)));
-    list.innerHTML='';
-    if(filtered.length===0){ empty.hidden=false; return; }
-    empty.hidden=true;
-    filtered.forEach(s=>{
-      const card = document.createElement('article');
-      card.className='snippet-card';
-      const preview = esc(s.code.split('\n').slice(0,4).join('\n'));
-      card.innerHTML = `
-        <div class="snippet-top">
-          <div>
-            <h3>${esc(s.title)}</h3>
-            <div class="meta"><span class="tag">${esc(s.category)}</span><span class="dot">•</span><span>${fmtDate(s.date)}</span></div>
-          </div>
-          <span class="lang lang-${s.language}">${s.language.toUpperCase()}</span>
+// Vault (Tab 1 - mantido)
+const VAULT_KEY = 'gvault-items-v2';
+function loadVault() {
+  const items = JSON.parse(localStorage.getItem(VAULT_KEY) || '[]');
+  const list = $('#vaultList');
+  list.innerHTML = '';
+  $('#vaultEmpty').classList.toggle('hidden', items.length > 0);
+  items.slice().reverse().forEach((it, idx) => {
+    const realIdx = items.length - 1 - idx;
+    const card = document.createElement('div');
+    card.className = 'group rounded-xl border border-zinc-800 bg-[#0c0c12] p-3 hover:border-zinc-700 transition';
+    const isImg = /<img[^>]+src="data:/i.test(it.code);
+    card.innerHTML = `
+      <div class="flex items-start gap-3">
+        <div class="w-14 h-14 rounded-lg bg-black/60 border border-zinc-800 flex items-center justify-center overflow-hidden shrink-0">
+          ${isImg ? `<img src="${(it.code.match(/src="([^"]+)"/)||[])[1]||''}" class="w-full h-full object-cover">` : `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="text-zinc-600"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>`}
         </div>
-        <pre><code>${preview}</code></pre>
-        <div class="snippet-actions">
-          <button data-act="copy" data-id="${s.id}">Copiar</button>
-          <button data-act="edit" data-id="${s.id}">Editar</button>
-          <button data-act="download" data-id="${s.id}">Baixar .txt</button>
-          <button data-act="delete" data-id="${s.id}" class="danger">Deletar</button>
+        <div class="min-w-0 flex-1">
+          <p class="text-[11px] text-zinc-500">${new Date(it.date).toLocaleString('pt-BR')}</p>
+          <pre class="mono text-[11px] text-zinc-300 mt-1 line-clamp-2 whitespace-pre-wrap break-all max-h-[2.8em] overflow-hidden">${it.code.replace(/</g,'&lt;')}</pre>
         </div>
-      `;
-      list.appendChild(card);
-    });
-  }
-
-  // Snippet actions
-  $('#snippets').addEventListener('click', e=>{
-    const btn = e.target.closest('button'); if(!btn) return;
-    const id = btn.dataset.id; const act = btn.dataset.act;
-    const s = snippets.find(x=>x.id===id); if(!s) return;
-    if(act==='copy') copyText(s.code);
-    if(act==='edit') openModal(s);
-    if(act==='download'){
-      const blob = new Blob([s.code],{type:'text/plain'});
-      const a = document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=s.title.replace(/[^\w\-]+/g,'_')+'.txt'; a.click(); URL.revokeObjectURL(a.href);
-      toast('Baixado');
-    }
-    if(act==='delete'){
-      if(confirm(`Deletar "${s.title}"?`)){ snippets = snippets.filter(x=>x.id!==id); saveSnips(); renderCats(); renderSnips(); toast('Deletado'); }
-    }
+      </div>
+      <div class="flex items-center gap-2 mt-2 opacity-0 group-hover:opacity-100 transition">
+        <button data-copy="${realIdx}" class="text-[11px] px-2 py-1 rounded bg-zinc-900 border border-zinc-800 hover:bg-zinc-800">Copiar</button>
+        <button data-del="${realIdx}" class="text-[11px] px-2 py-1 rounded bg-zinc-900 border border-zinc-800 hover:bg-red-900/30 hover:text-red-300 ml-auto">Excluir</button>
+      </div>
+    `;
+    list.appendChild(card);
   });
-
-  // Modal
-  const modal = $('#modal');
-  function openModal(data){
-    editingId = data?.id||null;
-    $('#modal-title').textContent = editingId?'Editar snippet':'Novo snippet';
-    $('#f-title').value = data?.title||'';
-    renderCats(); // ensure select filled
-    $('#f-category').value = data?.category||categories[0];
-    $('#f-lang').value = data?.language||'html';
-    $('#f-code').value = data?.code||'';
-    modal.classList.add('open'); modal.setAttribute('aria-hidden','false');
-    setTimeout(()=>$('#f-title').focus(),50);
-  }
-  function closeModal(){ modal.classList.remove('open'); modal.setAttribute('aria-hidden','true'); editingId=null; }
-  $('#btn-cancel').onclick = closeModal;
-  $('#modal-backdrop').onclick = closeModal;
-  document.addEventListener('keydown', e=>{ if(e.key==='Escape' && modal.classList.contains('open')) closeModal(); });
-
-  $('#snippet-form').addEventListener('submit', e=>{
-    e.preventDefault();
-    const title = $('#f-title').value.trim(); if(!title) return;
-    const category = $('#f-category').value;
-    const language = $('#f-lang').value;
-    const code = $('#f-code').value;
-    if(editingId){
-      const s = snippets.find(x=>x.id===editingId); Object.assign(s,{title,category,language,code,date:Date.now()});
-      toast('Atualizado');
-    }else{
-      snippets.unshift({id:uid(),title,category,language,code,date:Date.now()});
-      toast('Salvo no Vault');
-    }
-    saveSnips(); renderCats(); renderSnips(); closeModal();
+  list.querySelectorAll('[data-copy]').forEach(b => b.onclick = () => {
+    navigator.clipboard.writeText(items[+b.dataset.copy].code);
+    showToast('Copiado do Vault');
   });
-
-  // Search
-  $('#search').addEventListener('input', e=>{ searchTerm = e.target.value; renderSnips(); });
-
-  // Add category
-  $('#btn-add-cat').onclick = ()=>{
-    const name = prompt('Nome da nova categoria:'); if(!name) return;
-    const clean = name.trim(); if(!clean) return;
-    if(categories.includes(clean)) return toast('Categoria já existe');
-    categories.push(clean); saveCats(); renderCats(); toast('Categoria criada');
-  };
-
-  // Export / Import
-  $('#btn-export').onclick = ()=>{
-    const data = JSON.stringify(snippets,null,2);
-    const blob = new Blob([data],{type:'application/json'});
-    const a = document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='g-vault-export.json'; a.click(); URL.revokeObjectURL(a.href);
-  };
-  $('#btn-import').onclick = ()=> $('#import-file').click();
-  $('#import-file').addEventListener('change', async e=>{
-    const file = e.target.files[0]; if(!file) return;
-    try{
-      const text = await file.text(); const arr = JSON.parse(text);
-      if(!Array.isArray(arr)) throw new Error('JSON inválido');
-      let added=0;
-      arr.forEach(it=>{
-        if(!it.title||!it.code) return;
-        snippets.push({
-          id: uid(),
-          title: String(it.title).slice(0,120),
-          category: categories.includes(it.category)?it.category:'Outros',
-          language: ['html','css','js','json'].includes(it.language)?it.language:'html',
-          code: String(it.code),
-          date: Date.now()
-        }); added++;
-      });
-      saveSnips(); renderCats(); renderSnips(); toast(`Importado ${added} snippets`);
-    }catch(err){ alert('Erro ao importar: '+err.message); }
-    e.target.value='';
+  list.querySelectorAll('[data-del]').forEach(b => b.onclick = () => {
+    const i = +b.dataset.del;
+    items.splice(i,1);
+    localStorage.setItem(VAULT_KEY, JSON.stringify(items));
+    loadVault();
   });
+}
+$('#saveVaultBtn').onclick = () => {
+  const code = $('#vaultInput').value.trim();
+  if(!code) return;
+  const items = JSON.parse(localStorage.getItem(VAULT_KEY) || '[]');
+  items.push({code, date: Date.now()});
+  localStorage.setItem(VAULT_KEY, JSON.stringify(items));
+  $('#vaultInput').value = '';
+  loadVault();
+  showToast('Salvo no Vault');
+};
+$('#clearVault').onclick = () => {
+  if(confirm('Limpar todos os itens?')) { localStorage.removeItem(VAULT_KEY); loadVault(); }
+};
+loadVault();
 
-  // New button
-  $('#btn-new').onclick = ()=> openModal();
+// Imagem → HTML
+const dropzone = $('#dropzone');
+const imgInput = $('#imgInput');
+const previewImg = $('#previewImg');
+const previewWrap = $('#previewWrap');
+const dropContent = $('#dropContent');
+const chkCompress = $('#chkCompress');
+const origSizeEl = $('#origSize');
+const compSizeEl = $('#compSize');
+const savingEl = $('#saving');
+const sizeInfo = $('#sizeInfo');
+const imgDims = $('#imgDims');
+const output = $('#output');
+const lineCount = $('#lineCount');
+const charCount = $('#charCount');
+const externaHelp = $('#externaHelp');
+const sizeWarning = $('#sizeWarning');
+const changeImg = $('#changeImg');
 
-  // Tabs
-  $$('.tab').forEach(b=>{
-    b.onclick = ()=>{
-      $$('.tab').forEach(t=>t.classList.toggle('active', t===b));
-      const tab = b.dataset.tab;
-      $('#view-codigos').classList.toggle('active', tab==='codigos');
-      $('#view-imagem').classList.toggle('active', tab==='imagem');
+let currentFile = null;
+let currentDataUrl = '';
+let compressedBlobSize = 0;
+
+function showToast(msg) {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.style.opacity = '1';
+  setTimeout(() => t.style.opacity = '0', 1600);
+}
+
+function formatBytes(b) {
+  if (b < 1024) return b + ' B';
+  if (b < 1024*1024) return (b/1024).toFixed(1) + ' KB';
+  return (b/1024/1024).toFixed(2) + ' MB';
+}
+
+dropzone.addEventListener('click', () => imgInput.click());
+dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('border-violet-500/70'); });
+dropzone.addEventListener('dragleave', () => dropzone.classList.remove('border-violet-500/70'));
+dropzone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropzone.classList.remove('border-violet-500/70');
+  const f = e.dataTransfer.files?.[0];
+  if (f) handleFile(f);
+});
+imgInput.addEventListener('change', e => { const f = e.target.files?.[0]; if (f) handleFile(f); });
+changeImg.onclick = () => imgInput.click();
+chkCompress.onchange = () => { if (currentFile) handleFile(currentFile); };
+
+$$('input[name="mode"]').forEach(r => r.onchange = updateOutput);
+
+async function handleFile(file) {
+  if (!file.type.startsWith('image/')) return showToast('Arquivo não é imagem');
+  currentFile = file;
+  origSizeEl.textContent = formatBytes(file.size);
+  dropContent.classList.add('hidden');
+  previewWrap.classList.remove('hidden');
+  changeImg.classList.remove('hidden');
+  sizeInfo.classList.remove('hidden');
+
+  const reader = new FileReader();
+  reader.onload = async e => {
+    const img = new Image();
+    img.onload = async () => {
+      previewImg.src = e.target.result;
+      imgDims.textContent = `${img.naturalWidth} × ${img.naturalHeight}px`;
+
+      const shouldCompress = chkCompress.checked;
+      let dataUrl = e.target.result;
+      let outW = img.naturalWidth, outH = img.naturalHeight;
+
+      if (shouldCompress) {
+        const maxW = 800;
+        const scale = Math.min(1, maxW / img.naturalWidth);
+        outW = Math.round(img.naturalWidth * scale);
+        outH = Math.round(img.naturalHeight * scale);
+        const canvas = document.createElement('canvas');
+        canvas.width = outW; canvas.height = outH;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, outW, outH);
+        // JPEG 0.75 para máxima compressão compatível com Blogger
+        dataUrl = canvas.toDataURL('image/jpeg', 0.75);
+      }
+
+      currentDataUrl = dataUrl;
+      // calcula tamanho comprimido
+      const blob = await (await fetch(dataUrl)).blob();
+      compressedBlobSize = blob.size;
+      compSizeEl.textContent = formatBytes(blob.size);
+      const savePct = file.size > 0 ? Math.round((1 - blob.size / file.size) * 100) : 0;
+      savingEl.textContent = savePct > 0 ? `-${savePct}%` : '';
+
+      imgDims.textContent = `${img.naturalWidth}×${img.naturalHeight} → ${outW}×${outH}px`;
+
+      updateOutput();
+      checkSizeWarning();
     };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+function getMode() {
+  return document.querySelector('input[name="mode"]:checked').value;
+}
+
+function updateOutput() {
+  const mode = getMode();
+  externaHelp.classList.toggle('hidden', mode !== 'externa');
+  
+  let code = '';
+  if (mode === 'blogger') {
+    // MODO 1: Blogger Curto (1 linha, sem quebras)
+    const src = currentDataUrl || '';
+    code = `<div class="separator" style="clear:both;text-align:center;"><img border="0" src="${src}" /></div>`;
+  } else if (mode === 'simple') {
+    // MODO 2: img simples (1 linha)
+    const src = currentDataUrl || '';
+    code = `<img src="${src}" alt="" style="max-width:100%;height:auto;">`;
+  } else {
+    // MODO 3: URL externa (1 linha placeholder)
+    code = `<div class="separator" style="clear:both;text-align:center;"><img border="0" src="COLE_SUA_URL_AQUI" /></div>`;
+  }
+
+  output.value = code;
+  lineCount.textContent = code.split('\n').length;
+  charCount.textContent = code.length.toLocaleString('pt-BR') + ' chars';
+
+  // garante single-line visual sem wrap
+  output.scrollLeft = 0;
+}
+
+function checkSizeWarning() {
+  const mode = getMode();
+  if (mode === 'externa' || !currentDataUrl) {
+    sizeWarning.classList.add('hidden');
+    return;
+  }
+  const kb = compressedBlobSize / 1024;
+  if (kb > 300) {
+    sizeWarning.classList.remove('hidden');
+    sizeWarning.textContent = `⚠️ Esta imagem tem ${kb.toFixed(0)}KB em base64. Recomendo usar "URL externa" ou ativar compressão para ficar abaixo de 300KB.`;
+  } else {
+    sizeWarning.classList.add('hidden');
+  }
+}
+
+function copyCode() {
+  if (!output.value) return showToast('Gere um código primeiro');
+  navigator.clipboard.writeText(output.value).then(() => {
+    $('#copyToast').style.opacity = '1';
+    setTimeout(()=> $('#copyToast').style.opacity = '0', 1200);
+    showToast('Código copiado!');
   });
+}
+$('#copyBtn').onclick = copyCode;
+$('#copyOneBtn').onclick = copyCode;
 
-  // IMAGE TOOL
-  const dropzone = $('#dropzone');
-  const fileInput = $('#file-input');
-  $('#btn-choose').onclick = ()=> fileInput.click();
-  dropzone.addEventListener('click', ()=> fileInput.click());
-  dropzone.addEventListener('keydown', e=>{ if(e.key==='Enter'||e.key===' ') fileInput.click(); });
-  ['dragenter','dragover'].forEach(ev=> dropzone.addEventListener(ev, e=>{e.preventDefault(); dropzone.classList.add('drag');}));
-  ['dragleave','drop'].forEach(ev=> dropzone.addEventListener(ev, e=>{e.preventDefault(); dropzone.classList.remove('drag');}));
-  dropzone.addEventListener('drop', e=>{ const f = e.dataTransfer.files[0]; if(f) handleFile(f); });
-  fileInput.addEventListener('change', e=>{ const f=e.target.files[0]; if(f) handleFile(f); });
+$('#saveToVaultBtn').onclick = () => {
+  if (!output.value) return showToast('Nada para salvar');
+  const items = JSON.parse(localStorage.getItem(VAULT_KEY) || '[]');
+  items.push({ code: output.value, date: Date.now(), type: 'image' });
+  localStorage.setItem(VAULT_KEY, JSON.stringify(items));
+  loadVault();
+  showToast('Enviado para o Vault');
+  // opcional: mudar para aba vault
+  $('#btn-vault').click();
+};
 
-  function handleFile(file){
-    if(!file.type.startsWith('image/')) return alert('Envie uma imagem válida');
-    const reader = new FileReader();
-    reader.onload = ev=>{
-      const dataUrl = ev.target.result;
-      const img = new Image();
-      img.onload = ()=>{
-        currentImage = { dataUrl, name:file.name, size:file.size, type:file.type, width:img.naturalWidth, height:img.naturalHeight };
-        $('#preview-img').src = dataUrl;
-        $('#preview-wrap').classList.add('show');
-        $('#image-info').innerHTML = `
-          <span class="info-pill">${esc(file.name)}</span>
-          <span class="info-pill">${img.naturalWidth}×${img.naturalHeight}</span>
-          <span class="info-pill">${fmtSize(file.size)}</span>
-          <span class="info-pill">${file.type}</span>
-        `;
-        $('#size-warning').classList.toggle('show', file.size>500*1024);
-        $('#btn-save-vault').disabled = false;
-        generateCode();
-      };
-      img.src = dataUrl;
-    };
-    reader.readAsDataURL(file);
+// Estado inicial
+updateOutput();
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
+    // colar imagem do clipboard
+    navigator.clipboard.read().then(items => {
+      for (const item of items) {
+        for (const type of item.types) {
+          if (type.startsWith('image/')) {
+            item.getType(type).then(blob => {
+              const file = new File([blob], 'pasted.png', {type});
+              handleFile(file);
+              $('#btn-imagem').click();
+            });
+          }
+        }
+      }
+    }).catch(()=>{});
   }
-
-  function generateCode(){
-    if(!currentImage) return;
-    const mode = document.querySelector('input[name="mode"]:checked').value;
-    const {dataUrl,name,width:w,height:h} = currentImage;
-    let code='';
-    const safeAlt = name.replace(/"/g,'');
-    if(mode==='img'){
-      code = `<img src="${dataUrl}" alt="${safeAlt}" style="max-width:100%;height:auto;">`;
-    }else if(mode==='div'){
-      code = `<div style="background-image:url('${dataUrl}');background-size:cover;background-position:center;width:100%;aspect-ratio:${w}/${h};"></div>`;
-    }else if(mode==='base64'){
-      code = dataUrl;
-    }else if(mode==='blogger'){
-      code = `<div class="separator" style="clear:both;text-align:center;"><img border="0" data-original-height="${h}" data-original-width="${w}" src="${dataUrl}" style="max-width:100%;height:auto;"></div>`;
-    }
-    $('#code-output').value = code;
-    const live = $('#live-preview');
-    if(mode==='base64'){
-      live.innerHTML = `<img src="${dataUrl}" alt="" style="max-width:100%;height:auto;border-radius:8px">`;
-    }else{
-      live.innerHTML = code;
-    }
-  }
-  $$('input[name="mode"]').forEach(r=> r.addEventListener('change', generateCode));
-  $('#btn-copy-code').onclick = ()=> copyText($('#code-output').value||'');
-  $('#btn-clear-img').onclick = ()=>{
-    currentImage=null; $('#preview-wrap').classList.remove('show'); $('#preview-img').src=''; $('#image-info').innerHTML=''; $('#code-output').value=''; $('#live-preview').innerHTML='<span style="color:var(--muted)">Sem imagem</span>'; $('#size-warning').classList.remove('show'); $('#btn-save-vault').disabled=true; fileInput.value='';
-  };
-  $('#btn-save-vault').onclick = ()=>{
-    if(!currentImage) return;
-    const code = $('#code-output').value;
-    const name = currentImage.name.replace(/\.[^.]+$/,'');
-    snippets.unshift({ id:uid(), title:`IMG: ${name}`, category:'Assets', language:'html', code, date:Date.now() });
-    saveSnips(); renderCats(); renderSnips();
-    document.querySelector('.tab[data-tab="codigos"]').click();
-    toast('Imagem salva no Vault');
-    // keep image loaded in case user wants another mode
-  };
-
-  // Start
-  load(); renderCats(); renderSnips();
-})();
+});
 </script>
 </body>
 </html>
